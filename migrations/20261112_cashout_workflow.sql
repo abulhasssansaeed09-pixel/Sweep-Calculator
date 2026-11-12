@@ -103,3 +103,17 @@ begin
 end $$;
 revoke all on function public.approve_cashout(uuid,text) from public;
 grant execute on function public.approve_cashout(uuid,text) to authenticated;
+
+-- Only the workspace owner can change backend-specific cash-out rules.
+create or replace function public.update_cashout_rules(
+ p_game uuid,p_min_multiplier numeric,p_max_points numeric,p_fee_rate numeric,p_fee_fixed numeric,p_fee_bearer text
+) returns void language plpgsql security definer set search_path='' as $$
+declare w uuid;
+begin
+ select g.workspace_id into w from public.games g where g.id=p_game;
+ if w is null or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
+ if p_min_multiplier is null or p_min_multiplier<0 or p_fee_rate is null or p_fee_rate<0 or p_fee_rate>100 or p_fee_fixed is null or p_fee_fixed<0 or p_fee_bearer not in ('owner','player') or p_max_points<0 then raise exception 'Invalid cash-out rule'; end if;
+ update public.games set cashout_min_multiplier=p_min_multiplier,cashout_max_points=nullif(p_max_points,0),cashout_fee_rate=p_fee_rate,cashout_fee_fixed=p_fee_fixed,cashout_fee_bearer=p_fee_bearer where id=p_game;
+end $$;
+revoke all on function public.update_cashout_rules(uuid,numeric,numeric,numeric,numeric,text) from public;
+grant execute on function public.update_cashout_rules(uuid,numeric,numeric,numeric,numeric,text) to authenticated;
