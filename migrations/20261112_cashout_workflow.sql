@@ -41,8 +41,7 @@ create table if not exists public.cashout_notifications (
  workspace_id uuid not null references public.workspaces(id),
  cashout_id uuid not null references public.cashouts(id),
  kind text not null check(kind in ('review_required','owner_approved')),
- created_at timestamptz not null default now(),
- unique(cashout_id,kind)
+ created_at timestamptz not null default now()
 );
 create table if not exists public.cashout_audit (
  id uuid primary key default gen_random_uuid(),
@@ -120,7 +119,7 @@ declare w uuid;
 begin
  select g.workspace_id into w from public.games g where g.id=p_game;
  if w is null or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
- if p_min_multiplier is null or p_min_multiplier<0 or p_fee_rate is null or p_fee_rate<0 or p_fee_rate>100 or p_fee_fixed is null or p_fee_fixed<0 or p_fee_bearer not in ('owner','player') or p_max_points<0 then raise exception 'Invalid cash-out rule'; end if;
+ if p_min_multiplier is null or p_min_multiplier<0 or p_fee_rate is null or p_fee_rate<0 or p_fee_rate>100 or p_fee_fixed is null or p_fee_fixed<0 or p_fee_bearer is null or p_fee_bearer not in ('owner','player') or p_max_points is null or p_max_points<0 then raise exception 'Invalid cash-out rule'; end if;
  insert into public.cashout_rules(game_id,workspace_id,min_multiplier,max_points,fee_rate,fee_fixed,fee_bearer)
  values(p_game,w,p_min_multiplier,nullif(p_max_points,0),p_fee_rate,p_fee_fixed,p_fee_bearer)
  on conflict(game_id) do update set min_multiplier=excluded.min_multiplier,max_points=excluded.max_points,fee_rate=excluded.fee_rate,fee_fixed=excluded.fee_fixed,fee_bearer=excluded.fee_bearer;
@@ -146,8 +145,7 @@ begin
  insert into public.cashout_audit(cashout_id,workspace_id,action,reason,old_record,new_record)
  values(p_cashout,old_row.workspace_id,'corrected',trim(p_reason),to_jsonb(old_row),to_jsonb(new_row));
  insert into public.cashout_notifications(workspace_id,cashout_id,kind)
- values(old_row.workspace_id,p_cashout,'review_required')
- on conflict(cashout_id,kind) do nothing;
+ values(old_row.workspace_id,p_cashout,'review_required');
 end $$;
 revoke all on function public.correct_cashout(uuid,numeric,numeric,text) from public;
 grant execute on function public.correct_cashout(uuid,numeric,numeric,text) to authenticated;
