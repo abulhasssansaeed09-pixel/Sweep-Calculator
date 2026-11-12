@@ -127,3 +127,27 @@ begin
 end $$;
 revoke all on function public.update_cashout_rules(uuid,numeric,numeric,numeric,numeric,text) from public;
 grant execute on function public.update_cashout_rules(uuid,numeric,numeric,numeric,numeric,text) to authenticated;
+
+-- Manager/owner correction: immutable audit, reset approval for owner re-review.
+create or replace function public.correct_cashout(
+ p_cashout uuid,p_points numeric,p_gross numeric,p_reason text
+) returns void language plpgsql security definer set search_path='' as $$
+declare old_row public.cashouts%rowtype; new_row public.cashouts%rowtype; revised_paid numeric;
+begin
+ if length(trim(coalesce(p_reason,'')))<3 then raise exception 'Correction reason required'; end if;
+ if p_points is null or p_gross is null or p_points<=0 or p_gross<=0 then raise exception 'Invalid cash-out values'; end if;
+ select * into old_row from public.cashouts where id=p_cashout for update;
+ if old_row.id is null or not exists(select 1 from public.memberships m where m.workspace_id=old_row.workspace_id and m.user_id=auth.uid() and m.role in ('owner','manager')) then raise exception 'Manager/Owner access required'; end if;
+ revised_paid:=case when old_row.fee_bearer='player' then p_gross-round(p_gross*old_row.fee_rate/100+old_row.fee_fixed,2) else p_gross end;
+ if revised_paid<0 then raise exception 'Cash-out fee exceeds payout'; end if;
+ update public.cashouts set points=p_points,gross_amount=p_gross,net_paid=revised_paid,
+ review_status='review_required',review_reason='Manager/Owner correction requires owner review',
+ reviewed_by=null,reviewed_at=null,approval_reason=null where id=p_cashout returning * into new_row;
+ insert into public.cashout_audit(cashout_id,workspace_id,action,reason,old_record,new_record)
+ values(p_cashout,old_row.workspace_id,'corrected',trim(p_reason),to_jsonb(old_row),to_jsonb(new_row));
+ insert into public.cashout_notifications(workspace_id,cashout_id,kind)
+ values(old_row.workspace_id,p_cashout,'review_required')
+ on conflict(cashout_id,kind) do nothing;
+end $$;
+revoke all on function public.correct_cashout(uuid,numeric,numeric,text) from public;
+grant execute on function public.correct_cashout(uuid,numeric,numeric,text) to authenticated;
