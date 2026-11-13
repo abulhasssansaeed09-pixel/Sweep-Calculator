@@ -149,3 +149,16 @@ begin
 end $$;
 revoke all on function public.correct_cashout(uuid,numeric,numeric,text) from public;
 grant execute on function public.correct_cashout(uuid,numeric,numeric,text) to authenticated;
+
+-- Read-only projection: no fee configuration or private snapshots can be queried by workers.
+-- Underlying cashouts table is inaccessible to browser roles; controlled SECURITY DEFINER RPCs handle writes.
+create or replace view public.cashouts_visible with (security_barrier=true) as
+select c.id,c.workspace_id,c.player_id,c.game_id,c.provider_id,c.points,c.gross_amount,
+ c.net_paid,c.note,c.created_by,c.created_at,c.review_status,c.review_reason,
+ c.reviewed_by,c.reviewed_at,c.approval_reason
+from public.cashouts c
+where auth.uid() is not null and public.team_access_active(c.workspace_id)
+ and exists(select 1 from public.memberships m where m.user_id=auth.uid() and m.workspace_id=c.workspace_id);
+revoke all on public.cashouts from anon,authenticated;
+revoke all on public.cashouts_visible from public,anon;
+grant select on public.cashouts_visible to authenticated;
