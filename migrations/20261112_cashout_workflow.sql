@@ -118,7 +118,7 @@ create or replace function public.update_cashout_rules(
 declare w uuid;
 begin
  select g.workspace_id into w from public.games g where g.id=p_game;
- if w is null or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
+ if w is null or not public.team_access_active(w) or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
  if p_min_multiplier is null or p_min_multiplier<0 or p_fee_rate is null or p_fee_rate<0 or p_fee_rate>100 or p_fee_fixed is null or p_fee_fixed<0 or p_fee_bearer is null or p_fee_bearer not in ('owner','player') or p_max_points is null or p_max_points<0 then raise exception 'Invalid cash-out rule'; end if;
  insert into public.cashout_rules(game_id,workspace_id,min_multiplier,max_points,fee_rate,fee_fixed,fee_bearer)
  values(p_game,w,p_min_multiplier,nullif(p_max_points,0),p_fee_rate,p_fee_fixed,p_fee_bearer)
