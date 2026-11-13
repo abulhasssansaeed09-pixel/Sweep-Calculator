@@ -64,7 +64,7 @@ if(form==='correct-cashout'){if(!manager())throw Error('Manager/Owner only');con
 if(form==='approve-cashout'){if(role!=='owner')throw Error('Owner only');const r=await sb.rpc('approve_cashout',{p_cashout:d.cashout_id,p_reason:d.reason});if(r.error)throw r.error;await refresh();message('Owner approval recorded.');return}
 if(form==='closing'){const r=await sb.rpc('finalize_backend_closing',{p_game:d.game_id,p_balance:Number(d.balance)});if(r.error)throw r.error;await refresh();message('Closing finalized.');return}
 let row={workspace_id:workspace.id},tableName=form;
-if(form==='player'){const normalized=String(d.name||'').trim().replace(/\\s+/g,' ').toLowerCase();if(!normalized)throw Error('Player name is required.');if(players.some(p=>String(p.name||'').trim().replace(/\\s+/g,' ').toLowerCase()===normalized))throw Error('Duplicate player name/ID. Open the existing wallet instead.');Object.assign(row,{name:d.name.trim(),created_by:user.id});tableName='players';}
+if(form==='player'){const normalized=String(d.name||'').trim().replace(/\s+/g,' ').toLowerCase();if(!normalized)throw Error('Player name is required.');if(players.some(p=>String(p.name||'').trim().replace(/\s+/g,' ').toLowerCase()===normalized))throw Error('Duplicate player name/ID. Open the existing wallet instead.');Object.assign(row,{name:d.name.trim(),created_by:user.id});tableName='players';}
 if(form==='game')Object.assign(row,{name:d.name,purchase_rate:Number(d.purchase_rate)}),tableName='games';
 if(form==='provider')Object.assign(row,{company:d.company,method:d.method,rate:Number(d.rate),fixed_fee:Number(d.fixed_fee)}),tableName='providers';
 if(form==='expense')Object.assign(row,{description:d.description,amount:Number(d.amount),created_by:user.id}),tableName='expenses';
