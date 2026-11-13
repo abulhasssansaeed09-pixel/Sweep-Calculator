@@ -71,7 +71,7 @@ returns uuid language plpgsql security definer set search_path='' as $$
 declare w uuid; p public.providers%rowtype; g public.games%rowtype; rules public.cashout_rules%rowtype; r public.cashouts%rowtype; last_points numeric; minimum numeric; fee numeric; paid numeric; suspicious boolean; why text;
 begin
  select g.workspace_id into w from public.games g where g.id=p_game;
- if w is null or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid()) then raise exception 'Not a workspace member'; end if;
+ if w is null or not public.team_access_active(w) or not exists(select 1 from public.memberships m where m.workspace_id=w and m.user_id=auth.uid()) then raise exception 'Not a workspace member'; end if;
  if not exists(select 1 from public.players x where x.id=p_player and x.workspace_id=w) then raise exception 'Invalid player'; end if;
  select * into g from public.games where id=p_game and workspace_id=w;
  select * into p from public.providers where id=p_provider and workspace_id=w;
@@ -101,7 +101,7 @@ declare r public.cashouts%rowtype;
 begin
  if length(trim(coalesce(p_reason,'')))<3 then raise exception 'Approval reason required'; end if;
  select * into r from public.cashouts where id=p_cashout for update;
- if r.id is null or not exists(select 1 from public.memberships m where m.workspace_id=r.workspace_id and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
+ if r.id is null or not public.team_access_active(r.workspace_id) or not exists(select 1 from public.memberships m where m.workspace_id=r.workspace_id and m.user_id=auth.uid() and m.role='owner') then raise exception 'Owner access required'; end if;
  if r.review_status<>'review_required' then raise exception 'Cash-out is not pending review'; end if;
  update public.cashouts set review_status='owner_approved',reviewed_by=auth.uid(),reviewed_at=now(),approval_reason=p_reason where id=p_cashout;
  insert into public.cashout_audit(cashout_id,workspace_id,action,reason,old_record,new_record)
@@ -136,7 +136,7 @@ begin
  if length(trim(coalesce(p_reason,'')))<3 then raise exception 'Correction reason required'; end if;
  if p_points is null or p_gross is null or p_points<=0 or p_gross<=0 then raise exception 'Invalid cash-out values'; end if;
  select * into old_row from public.cashouts where id=p_cashout for update;
- if old_row.id is null or not exists(select 1 from public.memberships m where m.workspace_id=old_row.workspace_id and m.user_id=auth.uid() and m.role in ('owner','manager')) then raise exception 'Manager/Owner access required'; end if;
+ if old_row.id is null or not public.team_access_active(old_row.workspace_id) or not exists(select 1 from public.memberships m where m.workspace_id=old_row.workspace_id and m.user_id=auth.uid() and m.role in ('owner','manager')) then raise exception 'Manager/Owner access required'; end if;
  revised_paid:=case when old_row.fee_bearer='player' then p_gross-round(p_gross*old_row.fee_rate/100+old_row.fee_fixed,2) else p_gross end;
  if revised_paid<0 then raise exception 'Cash-out fee exceeds payout'; end if;
  update public.cashouts set points=p_points,gross_amount=p_gross,net_paid=revised_paid,
