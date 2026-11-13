@@ -31,13 +31,15 @@ as $$
      select 1 from public.team_accounts t
      where t.user_id=m.user_id and t.workspace_id=m.workspace_id
        and t.role=m.role and t.active=true
+   ) or not exists (
+     select 1 from public.team_accounts t2 where t2.user_id=m.user_id
    ))
  );
 $$;
 revoke all on function public.team_access_active(uuid) from public, anon;
 grant execute on function public.team_access_active(uuid) to authenticated;
 
--- These tables all carry workspace_id. Apply the guard to SELECT and mutations.
+-- Legacy members without a team_accounts row remain active during migration.\n-- Deactivation is available only for newly managed team accounts.\n-- Existing members must be enrolled before owner can manage their status.\n-- These tables all carry workspace_id. Apply the guard to SELECT and mutations.
 -- RLS on a workspace row does not replace the original per-role policies.
 do $$
 declare tab text;
