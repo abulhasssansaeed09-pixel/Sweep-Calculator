@@ -8,8 +8,10 @@ create table if not exists public.team_accounts (
  created_by uuid not null references auth.users(id),
  created_at timestamptz not null default now(),
  updated_at timestamptz not null default now(),
+ session_valid_after timestamptz not null default '-infinity',
  unique(login_id)
 );
+alter table public.team_accounts add column if not exists session_valid_after timestamptz not null default '-infinity';
 create index if not exists team_accounts_workspace_idx on public.team_accounts(workspace_id);
 alter table public.team_accounts enable row level security;
 revoke all on public.team_accounts from anon, authenticated;
@@ -31,6 +33,9 @@ as $$
      select 1 from public.team_accounts t
      where t.user_id=m.user_id and t.workspace_id=m.workspace_id
        and t.role=m.role and t.active=true
+       and exists(select 1 from auth.sessions sess
+         where sess.id=(auth.jwt()->>'session_id')::uuid
+           and sess.user_id=m.user_id and sess.created_at>t.session_valid_after)
    ) or not exists (
      select 1 from public.team_accounts t2 where t2.user_id=m.user_id
    ))
