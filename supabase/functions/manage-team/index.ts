@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.95.3';
 const cors={'access-control-allow-origin':'*','access-control-allow-headers':'authorization, x-client-info, apikey, content-type','access-control-allow-methods':'POST, OPTIONS'};
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'content-type':'application/json','cache-control':'no-store'}});
-const synthetic=(login:string)=>'team-'+Array.from(new TextEncoder().encode(login)).map(x=>x.toString(16).padStart(2,'0')).join('')+'@login.invalid';
+const synthetic=async(login:string)=>{const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(login));return 'team-'+Array.from(new Uint8Array(hash)).map(x=>x.toString(16).padStart(2,'0')).join('')+'@login.invalid'};
 Deno.serve(async req=>{
  if(req.method==='OPTIONS')return new Response(null,{status:204,headers:cors});
  if(req.method!=='POST')return json({error:'Method not allowed'},405);
@@ -24,7 +24,7 @@ Deno.serve(async req=>{
   if(!/^[a-z0-9][a-z0-9._@+-]{2,99}$/.test(login)||!['manager','worker'].includes(role)||password.length<12||password.length>128)return json({error:'Invalid login, role or password (minimum 12 characters)'},400);
   const {data:duplicate}=await admin.from('team_accounts').select('user_id').eq('login_id',login).maybeSingle();
   if(duplicate)return json({error:'Login identifier already used'},409);
-  const email=synthetic(login);
+  const email=await synthetic(login);
   const {data:created,error:createError}=await admin.auth.admin.createUser({email,password,email_confirm:true,app_metadata:{team_account:true}});
   if(createError||!created.user)return json({error:'Account could not be created'},400);
   const id=created.user.id;
