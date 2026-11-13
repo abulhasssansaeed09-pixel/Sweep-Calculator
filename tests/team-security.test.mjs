@@ -14,6 +14,7 @@ const cases={
  'client does not expose service role key':!js.includes('SERVICE_ROLE_KEY'),
  'hashed login mapping on server':edge.includes("crypto.subtle.digest('SHA-256'"),
  'hashed login mapping on client':js.includes("crypto.subtle.digest('SHA-256'"),
+ 'username-only login uses synthetic identity':js.includes("if(!d.email.includes('@'))return sb.auth.signInWithPassword({email:await teamEmail(d.email)"),
  'browser handles async login mapping':js.includes('email:await teamEmail(d.email)'),
  'CORS preflight':edge.includes("req.method==='OPTIONS'"),
  'owner UI has create control':js.includes('id="team-create"'),
