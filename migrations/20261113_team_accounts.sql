@@ -17,6 +17,38 @@ grant select on public.team_accounts to authenticated;
 drop policy if exists team_accounts_owner_read on public.team_accounts;
 create policy team_accounts_owner_read on public.team_accounts for select to authenticated
 using (exists(select 1 from public.memberships m where m.workspace_id=team_accounts.workspace_id and m.user_id=auth.uid() and m.role='owner'));
--- Existing RLS policies on business tables must ALSO check active team_accounts
--- (or equivalent central membership guard) before deactivation is considered complete.
--- Edge Function with service role is sole writer; never expose service role in browser.
+
+-- SECURITY: Restrictive policies are AND-ed with all existing permissive RLS policies.
+-- A definer function avoids recursive policies between memberships and team_accounts.
+create or replace function public.team_access_active(p_workspace uuid)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+ select auth.uid() is not null
+ and exists (
+   select 1 from public.memberships m
+   where m.user_id=auth.uid() and m.workspace_id=p_workspace
+   and (m.role='owner' or exists(
+     select 1 from public.team_accounts t
+     where t.user_id=m.user_id and t.workspace_id=m.workspace_id
+       and t.role=m.role and t.active=true
+   ))
+ );
+$$;
+revoke all on function public.team_access_active(uuid) from public, anon;
+grant execute on function public.team_access_active(uuid) to authenticated;
+
+-- These tables all carry workspace_id. Apply the guard to SELECT and mutations.
+-- RLS on a workspace row does not replace the original per-role policies.
+do $$
+declare tab text;
+begin
+ foreach tab in array array['memberships','players','games','providers','loads',
+  'reloads','closings','expenses','cashouts','cashout_rules',
+  'cashout_notifications','team_accounts'] loop
+   if to_regclass('public.'||tab) is not null then
+     execute format('drop policy if exists team_active_guard on public.%I',tab);
+     execute format('create policy team_active_guard on public.%I as restrictive for all to authenticated using (public.team_access_active(workspace_id)) with check (public.team_access_active(workspace_id))',tab);
+   end if;
+ end loop;
+end $$;
+-- New tables added later must receive this guard too.
