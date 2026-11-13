@@ -8,6 +8,7 @@ const team=read('migrations/20261113_team_accounts.sql');
 const cash=read('migrations/20261112_cashout_workflow.sql');
 const cases={
  'owner-only team administration':edge.includes("membership?.role!=='owner'"),
+ 'disabled owner identity cannot administer team':edge.includes("callerTeam?.active===false"),
  'manager/worker roles only':edge.includes("['manager','worker'].includes(role)"),
  'password minimum enforced':edge.includes('password.length<12'),
  'team account creation rollback':edge.includes('admin.auth.admin.deleteUser(id)'),
