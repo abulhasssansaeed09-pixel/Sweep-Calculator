@@ -22,6 +22,9 @@ const cases={
  'legacy members preserved':team.includes('or not exists ('),
  'inactive team member denied':team.includes('t.active=true'),
  'RLS restrictive guard':team.includes('as restrictive for all'),
+ 'password reset invalidates sessions':edge.includes('session_valid_after:new Date().toISOString()'),
+ 'RLS checks auth session creation':team.includes('from auth.sessions sess')&&team.includes('sess.created_at>t.session_valid_after'),
+ 'account status invalidates sessions':edge.includes('active:input.active,session_valid_after:'),
  'RPCs check active membership':(cash.match(/public\.team_access_active\(/g)||[]).length>=4
 };
 for(const [name,pass] of Object.entries(cases))test(name,()=>assert.ok(pass));
