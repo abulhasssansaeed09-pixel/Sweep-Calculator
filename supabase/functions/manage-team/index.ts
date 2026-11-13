@@ -41,10 +41,12 @@ Deno.serve(async req=>{
    const password=String(input.password||'');
    if(password.length<12||password.length>128)return json({error:'Password must be 12–128 characters'},400);
    const {error}=await admin.auth.admin.updateUserById(target,{password});
-   return error?json({error:'Password reset failed'},500):json({ok:true});
+   if(error)return json({error:'Password reset failed'},500);
+   const {error:cutoffError}=await admin.from('team_accounts').update({session_valid_after:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('user_id',target).eq('workspace_id',workspace_id);
+   return cutoffError?json({error:'Password changed but session revocation failed; disable account and retry'},500):json({ok:true});
   }
   if(typeof input.active!=='boolean')return json({error:'Invalid status'},400);
-  const {error}=await admin.from('team_accounts').update({active:input.active,updated_at:new Date().toISOString()}).eq('user_id',target).eq('workspace_id',workspace_id);
+  const {error}=await admin.from('team_accounts').update({active:input.active,session_valid_after:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('user_id',target).eq('workspace_id',workspace_id);
   if(error)return json({error:'Status update failed'},500);
   if(!input.active){const {error:banError}=await admin.auth.admin.updateUserById(target,{ban_duration:'876000h'});if(banError)return json({error:'Account marked inactive but auth ban failed; retry'},500)}
   else {const {error:unbanError}=await admin.auth.admin.updateUserById(target,{ban_duration:'none'});if(unbanError)return json({error:'Status marked active but auth unban failed; retry'},500)}
