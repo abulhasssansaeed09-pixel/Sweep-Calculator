@@ -1,0 +1,22 @@
+name: Free security regression tests
+on:
+  push:
+    branches:
+      - feature/approved-workflows-2026-11-12
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Team security regression checks
+        run: node --test tests/team-security.test.mjs
+      - name: Cashout free regression checks
+        run: node --test tests/cashout-free.test.mjs
