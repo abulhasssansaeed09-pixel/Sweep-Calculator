@@ -18,6 +18,9 @@ Deno.serve(async req=>{
  if(!/^[0-9a-f-]{36}$/i.test(workspace_id))return json({error:'Invalid workspace'},400);
  const {data:membership,error:membershipError}=await admin.from('memberships').select('role').eq('workspace_id',workspace_id).eq('user_id',user.id).maybeSingle();
  if(membershipError||membership?.role!=='owner')return json({error:'Forbidden'},403);
+ // Defense in depth: a suspended team identity must never administer accounts, even with an owner membership.
+ const {data:callerTeam,error:callerTeamError}=await admin.from('team_accounts').select('active').eq('user_id',user.id).maybeSingle();
+ if(callerTeamError||callerTeam?.active===false)return json({error:'Account disabled'},403);
  const action=String(input.action||'');
  if(action==='create'){
   const login=String(input.login_id||'').trim().toLowerCase(),role=String(input.role||''),password=String(input.password||'');
