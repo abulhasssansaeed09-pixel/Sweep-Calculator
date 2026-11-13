@@ -1,30 +1,29 @@
-# Owner-managed team invitations — approved design (2026-11-13)
+# Owner-managed team accounts — approved requirements (2026-11-13)
 
-## Decision
-- Each newly registered independent business owner creates a workspace; `create_my_workspace` assigns them the owner role.
-- Existing invited users must **not** create another owner workspace accidentally.
-- Only workspace owner can manually invite unlimited managers/loaders (subject to service quotas).
-- Owner enters employee email and role (manager or worker). Employee sets their own password using a one-time, expiring email invitation. No shared or owner-set passwords.
-- A manager/loader must never be able to invite, promote, demote, remove, or transfer members.
+## Final owner decision (supersedes invitation workflow)
+- No email invitations, delivery, confirmation or OTP. Email, when provided, is **only a login identifier**, not a communication channel.
+- Owner manually creates Manager or Loader accounts, supplying **either** a username (e.g. Hassan@101) **or** an email-style identifier. Either is sufficient; both may be supplied.
+- Each account receives a stable unique internal UUID; username/email identifiers must be normalized and unique within the chosen authentication namespace.
+- Owner sets an initial password and can reset it, activate/deactivate accounts, and view their role and status. Existing passwords must never be displayed or stored in plaintext.
+- One public login page; after authentication, server-verified membership role determines owner/manager/loader dashboard. Managers and loaders cannot create or administer accounts.
+- Account deactivation must be enforced on **every** protected database operation, not just login or UI, including previously issued sessions.
+- No owner credentials, service-role keys, or privileged account administration API in browser code.
 
-## Implementation security contract
-1. Supabase Edge Function authenticated with the caller JWT. Server verifies owner membership for the target workspace using a privileged server-side client. Do not put a service-role key in cloud HTML or browser JavaScript.
-2. Edge Function validates email, role allowlist (`manager`, `worker`), workspace, existing membership, duplicates, and invite rate limits. Log invite, acceptance, revocation, and role changes.
-3. Invite record stores workspace, invited email, intended role, status, expiry, inviter; use hashed single-use tokens if building custom links. Prefer Supabase Auth admin invitation APIs where supported; configure redirect URLs to the deployed application.
-4. Acceptance binds the invited email and authenticated Supabase user ID to the designated workspace membership transactionally. No user-controlled role/workspace fields can grant access.
-5. Owner can view pending invitations, resend expired invitations, revoke pending invitations, deactivate members and change worker/manager roles with server-side checks. Prevent removing the final owner.
-6. For new signups, only an uninvited user with no memberships may create a workspace. Invitation recipients see invitation acceptance instead of workspace creation.
-7. All workspace tables enforce membership and role in database RLS; hiding UI buttons is not security.
-8. Avoid exposing invite tokens, credentials, service keys, or full auth payloads in logs.
-9. Keep existing memberships and workspace data untouched during migration.
+## Implementation guidance
+- Supabase Auth expects a valid email or phone identity. A username-only login must be handled through a **secure server-side identity mapping**, possibly with a reserved synthetic email namespace for Auth. Synthetic addresses must never be used for outgoing mail, and the system must not rely on delivery to them.
+- Privileged Edge Functions verify caller JWT and active owner membership, create auth identities with the Supabase Admin API, assign workspace membership and role, reset passwords, and activate/deactivate. Use rate limits, strong password policy, audit logs and rollback/reconciliation for partial failures.
+- Authenticate by username/email identifier through a server-side resolver that does not reveal whether a user exists, then use Supabase Auth for password verification. Do not build custom password hashing in frontend.
+- Ensure identifier collision handling, duplicate account prevention, role validation, cross-workspace authorization, reset session invalidation and immediate access revocation.
+- Keep current production memberships and data intact. Do not deploy until integration tests and security checks pass.
 
-## Tests required before release
-- Owner invite manager and worker; invited employee sets password and sees correct dashboard.
-- Worker/manager cannot call invite endpoint, even via forged HTTP requests.
-- Invite cannot be accepted by a different email or reused after acceptance/revocation/expiry.
-- Cross-workspace invitation and role escalation denied.
-- Duplicate invites, existing accounts, email send failure, expired link, revoked user and owner signout handled.
-- Existing owner remains owner; no accidental second owner created.
+## Acceptance tests
+1. Owner creates manager using username only; creates loader using email-style identifier only; both can log in without receiving email.
+2. Duplicate identifiers rejected; UUID remains stable across identifier edits.
+3. Manager/loader cannot create, reset, disable or change other accounts by direct API calls.
+4. Disabled account denied both fresh login and database requests with an existing session.
+5. Owner password reset takes effect; previous password rejected; existing sessions revoked or blocked.
+6. User from another workspace cannot administer team members; audit logs include actor, target, action and timestamp.
+7. One login page routes roles correctly; final owner cannot accidentally be disabled.
 
 ## Status
-Requirements approved. This document is not a deployed invitation service. Edge Function, invite persistence, owner UI, RLS, email delivery and integration tests remain to implement. Production is unchanged.
+Approved specification only. Server endpoints, migrations, UI and tests are not yet implemented. Production unchanged.
