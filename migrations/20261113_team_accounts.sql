@@ -29,7 +29,7 @@ as $$
  and exists (
    select 1 from public.memberships m
    where m.user_id=auth.uid() and m.workspace_id=p_workspace
-   and (m.role='owner' or exists(
+   and ((m.role='owner' and not exists (select 1 from public.team_accounts owner_team where owner_team.user_id=m.user_id and owner_team.active=false)) or exists(
      select 1 from public.team_accounts t
      where t.user_id=m.user_id and t.workspace_id=m.workspace_id
        and t.role=m.role and t.active=true
