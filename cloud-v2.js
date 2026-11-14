@@ -129,7 +129,7 @@ function cashoutPage(){
  const form=panel('Record Cash Out','<form id="cashout" class="stack"><label class="field">Player<select name="player_id" required>'+options(players,'Choose player',p=>p.name)+'</select></label><label class="field">Backend<select name="game_id" required>'+options(games,'Choose backend',g=>g.name)+'</select></label><label class="field">Payment method<select name="provider_id" required>'+options(providers,'Choose provider',p=>p.company+' / '+p.method)+'</select></label>'+fld('points','Points redeemed / credited to backend','number','min="0.01" step="0.01"')+fld('gross','Gross cash-out ($)','number','min="0.01" step="0.01"')+'<label class="field">Notes<textarea name="note" rows="2" placeholder="Optional notes"></textarea></label><p class="muted">Platform-wide cash-out rules calculate the payout and flag exceptional entries for Owner review.</p><button class="primary">Record Cash Out</button></form>');
  const rows=cashouts.map(x=>[
  date(x.created_at),esc(playerName(x.player_id)),esc(gameName(x.game_id)),esc(providers.find(p=>p.id===x.provider_id)?.method||'—'),
- fmt(x.points),money(x.gross_amount),money(x.net_paid),esc(workerName(x.created_by)),esc(x.review_status),
+ fmt(x.points),money(x.gross_amount),money(x.net_paid),money(x.fee_bearer==='owner'?Math.round((Number(x.gross_amount)*Number(x.fee_rate)/100+Number(x.fee_fixed))*100)/100:0),esc(workerName(x.created_by)),esc(x.review_status),
  esc(x.review_reason||'—')+'<p class="muted">'+esc(x.note||'')+'</p>'+
  (x.review_status==='review_required'&&role==='owner'?'<form id="approve-cashout" class="stack"><input type="hidden" name="cashout_id" value="'+esc(x.id)+'"><input name="reason" placeholder="Owner approval reason" required minlength="3"><button class="primary">Approve Case</button></form>':'')+
  (manager()?'<details><summary>Audited Correction</summary><form id="correct-cashout" class="stack"><input type="hidden" name="cashout_id" value="'+esc(x.id)+'">'+fld('points','Corrected redeemed points','number','min="0.01" step="0.01" value="'+esc(x.points)+'"')+fld('gross','Corrected gross payout','number','min="0.01" step="0.01" value="'+esc(x.gross_amount)+'"')+'<input name="reason" placeholder="Correction reason" required minlength="3"><button class="ghost">Save Correction for Owner Review</button></form></details>':'')
@@ -137,7 +137,7 @@ function cashoutPage(){
  const notes=manager()?panel('Cash-Out Review Notifications',tbl(['Date','Event','Ticket'],cashoutNotifications.slice(0,100).map(x=>[date(x.created_at),esc(x.kind),esc(x.cashout_id.slice(0,12))]))):'';
  const audit=manager()?panel('Cash-Out Audit History',tbl(['Date','Ticket','Action','Actor','Reason'],cashoutAudit.slice(0,100).map(x=>[date(x.created_at),esc(x.cashout_id.slice(0,12)),esc(x.action),esc(workerName(x.actor_id)),esc(x.reason)]))):'';
  return (manager()?panel('Live Backend Credits',backendTickerTable()):'')+notes+form+
- panel('Cash-Out Transactions & Review Status',tbl(['Date','Player','Backend','Method','Point Credit','Gross','Paid','Worker','Status','Notes / Action'],rows))+audit;
+ panel('Cash-Out Transactions & Review Status',tbl(['Date','Player','Backend','Method','Point Credit','Gross','Paid','Owner Fee','Worker','Status','Notes / Action'],rows))+audit;
 }
 
 function backendPage(){
@@ -162,7 +162,7 @@ function backendPage(){
 function paymentsPage(){
  const rows=providers.map(p=>{
   const ls=loads.filter(l=>l.provider_id===p.id),cs=cashouts.filter(x=>x.provider_id===p.id);
-  const gross=sum(ls,l=>l.payment),fees=sum(ls,l=>Number(l.payment)*Number(l.rate)/100+Number(l.fixed_fee)),paid=sum(cs,x=>x.net_paid);
+  const gross=sum(ls,l=>l.payment),fees=sum(ls,l=>Number(l.payment)*Number(l.rate)/100+Number(l.fixed_fee))+sum(cs,x=>x.fee_bearer==='owner'?Math.round((Number(x.gross_amount)*Number(x.fee_rate)/100+Number(x.fee_fixed))*100)/100:0),paid=sum(cs,x=>x.net_paid);
   return[esc(p.company),esc(p.method),ls.length,money(gross),money(fees),money(paid),money(gross-fees-paid)];
  });
  const pending=reconciliations.filter(x=>['mismatch','stale'].includes(x.review_status));
