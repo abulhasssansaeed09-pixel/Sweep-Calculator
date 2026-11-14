@@ -80,7 +80,7 @@ function backendTickerTable(){
  x.estimated_available===null?'—':fmt(x.estimated_available),date(x.last_closing_at),x.needs_review?'Review required':'—']));
 }
 
-function loadTable(rows){return tbl(['Date','Player','Backend','Received','Points','Bonus','Worker'],rows.map(l=>[date(l.created_at),esc(playerName(l.player_id)),esc(gameName(l.game_id)),money(l.payment),fmt(l.points),fmt(Number(l.points)-Number(l.payment)),esc(workerName(l.created_by))]))}
+function loadTable(rows){return tbl(['Date','Player','Backend','Received','Points Loaded','Extra Bonus','Worker'],rows.map(l=>[date(l.created_at),esc(playerName(l.player_id)),esc(gameName(l.game_id)),money(l.payment),fmt(l.points),fmt(Number(l.points)-Number(l.payment)),esc(workerName(l.created_by))]))}
 
 function walletHistoryRows(playerIds){
  const ids=playerIds?new Set(playerIds):null;
@@ -110,7 +110,7 @@ function playersPage(){
  const summary=tbl(walletHeaders,walletSummaryRows(players));
  return '<div class="two">'+panel('Create Player','<form id="player" class="stack">'+fld('name','Player name / ID')+'<button class="primary">Save Player</button></form>')+
  panel('Player Wallets','<label class="field">Search player / unique ID<input id="wallet-search" type="search" placeholder="Search by name or full ID"></label><p class="muted">Extra Bonus (Total) = all bonus points added across this player’s Load transactions. The player ID is shortened for display; searching by full ID still works.</p><div id="wallet-results">'+summary+'</div>')+'</div>'+
- panel('Complete Wallet History','<div id="wallet-history">'+tbl(['Date','Player','Type','Backend','Method','Paid/Received','Points','Bonus','Status','Note','Worker'],walletHistoryRows())+'</div>');
+ panel('Complete Wallet History','<div id="wallet-history">'+tbl(['Date','Player','Type','Backend','Method','Paid/Received','Points','Extra Bonus','Status','Note','Worker'],walletHistoryRows())+'</div>');
 }
 
 function correctionEditor(l){
@@ -121,7 +121,7 @@ function correctionEditor(l){
  '<label class="field">Backend<select name="game_id" required>'+selectedOptions(games,'Choose backend',g=>g.name,l.game_id)+'</select></label>'+
  '<label class="field">Provider<select name="provider_id" required>'+selectedOptions(providers,'Choose provider',p=>p.company+' / '+p.method,l.provider_id)+'</select></label>'+
  fld('payment','Corrected payment ($)','number','min="0.01" step="0.01" value="'+esc(l.payment)+'"')+
- fld('bonus','Bonus for this load (%)','number','min="0" max="1000" step="0.01" value="'+esc(l.bonus_percent===0&&Number(l.points)!==Number(l.payment)&&Number(l.payment)>0?Math.max(0,Math.round((Number(l.points)/Number(l.payment)-1)*10000)/100):l.bonus_percent)+'"')+
+ fld('points','Corrected points loaded','number','min="0.01" step="0.01" value="'+esc(l.points)+'"')+
  '<label class="field">Notes<textarea name="note" rows="2">'+esc(l.note||'')+'</textarea></label>'+
  '<label class="field">Reason<input name="reason" type="text" required minlength="3" placeholder="Explain correction"></label>'+
  '<button class="primary">Submit Correction</button></form><p class="muted">Own loads within 15 minutes: instant correction. Later: manager approval. Manager/Owner changes are audited immediately.</p></details>';
@@ -130,8 +130,8 @@ function loadPage(){
  const show=role==='worker'?loads.filter(l=>l.created_by===user.id):loads;
  const pending=loadCorrections.filter(x=>x.status==='pending');
  const approvals=manager()?panel('Pending Load Corrections · '+pending.length,
-  tbl(['Request','Loader','Load','Proposed Payment','Bonus %','Reason','Review'],pending.map(x=>[
-   date(x.created_at),esc(workerName(x.requested_by)),esc(x.load_id.slice(0,8)),money(x.requested_payment),fmt(x.requested_bonus_percent)+'%',esc(x.reason),
+  tbl(['Request','Loader','Load','Proposed Payment','Proposed Points','Extra Bonus','Reason','Review'],pending.map(x=>[
+   date(x.created_at),esc(workerName(x.requested_by)),esc(x.load_id.slice(0,8)),money(x.requested_payment),fmt(x.requested_points),fmt(Math.max(0,Number(x.requested_points)-Number(x.requested_payment))),esc(x.reason),
    '<form id="review-load-correction" class="stack"><input type="hidden" name="request_id" value="'+esc(x.id)+'"><input name="note" placeholder="Review notes" required minlength="3"><div class="actions"><button name="decision" value="approve" class="primary">Approve</button><button name="decision" value="reject" class="ghost">Reject</button></div></form>'])))+
   panel('Correction Audit',tbl(['Date','Load','Actor','Reason'],loadAudit.slice(0,80).map(x=>[date(x.created_at),esc(x.load_id.slice(0,8)),esc(workerName(x.actor_id)),esc(x.reason)]))):'';
  return panel('New Load','<form id="load" class="stack"><label class="field">Player<select name="player_id" required>'+
@@ -139,14 +139,14 @@ function loadPage(){
  '<label class="field">Backend<select name="game_id" required>'+options(games,'Choose backend',g=>g.name)+'</select></label>'+
  '<label class="field">Payment provider<select name="provider_id" required>'+options(providers,'Choose provider',p=>p.company+' / '+p.method)+'</select></label>'+
  fld('payment','Payment received ($)','number','min="0.01" step="0.01"')+
- fld('bonus','Bonus for THIS load (%)','number','min="0" max="1000" step="0.01" placeholder="Type 0 for no bonus"')+
+ fld('points','Points loaded','number','min="0.01" step="0.01" placeholder="Actual points credited to player"')+
  '<label class="field">Notes (optional)<textarea name="note" rows="2"></textarea></label>'+
- '<p id="load-preview" class="muted">Enter the payment and a bonus percentage for this transaction. No bonus is saved as a player setting.</p>'+
+ '<p id="load-preview" class="muted">Enter payment received and actual points loaded. Extra bonus points = loaded points minus received amount.</p>'+
  '<button class="primary">Record Load</button></form>')+
 
  panel('Recent Loads',loadTable(show.slice(0,50)))+
  panel('Correct a Load',show.slice(0,20).map(correctionEditor).join('')||'<p class="muted">No eligible loads.</p>')+
- panel('My Correction Requests',tbl(['Date','Load','New Payment','Bonus %','Status','Reason'],loadCorrections.filter(x=>role==='worker'?x.requested_by===user.id:true).slice(0,60).map(x=>[date(x.created_at),esc(x.load_id.slice(0,8)),money(x.requested_payment),fmt(x.requested_bonus_percent)+'%',esc(x.status),esc(x.reason)])))+approvals;
+ panel('My Correction Requests',tbl(['Date','Load','New Payment','New Points','Extra Bonus','Status','Reason'],loadCorrections.filter(x=>role==='worker'?x.requested_by===user.id:true).slice(0,60).map(x=>[date(x.created_at),esc(x.load_id.slice(0,8)),money(x.requested_payment),fmt(x.requested_points),fmt(Math.max(0,Number(x.requested_points)-Number(x.requested_payment))),esc(x.status),esc(x.reason)])))+approvals;
 }
 
 function cashoutPage(){
@@ -224,12 +224,17 @@ document.addEventListener('click',async e=>{if(e.target.closest('[data-action="r
 document.addEventListener('input',e=>{
  const form=e.target.closest('form#load');
  if(form){
-  const payInput=form.querySelector('[name=payment]'),bonusInput=form.querySelector('[name=bonus]');
-  const payment=Number(payInput?.value),bonus=Number(bonusInput?.value);
+  const payInput=form.querySelector('[name=payment]'),pointsInput=form.querySelector('[name=points]');
+  const payment=Number(payInput?.value),points=Number(pointsInput?.value);
   const preview=document.getElementById('load-preview');
-  if(preview)preview.textContent=payInput?.value&&bonusInput?.value!==''&&Number.isFinite(payment)&&payment>0&&Number.isFinite(bonus)&&bonus>=0?
-   'Base: '+fmt(payment)+' points · This-load bonus: '+fmt(Math.round(payment*bonus)/100)+' points ('+fmt(bonus)+'%) · Total: '+fmt(Math.round(payment*(1+bonus/100)*100)/100):
-   'Enter payment and this transaction’s bonus percentage (type 0 when no bonus).';
+  if(preview){
+   if(!payInput?.value||!pointsInput?.value||!Number.isFinite(payment)||!Number.isFinite(points)||payment<=0||points<=0)
+    preview.textContent='Enter the amount received and the actual points loaded to calculate the extra bonus.';
+   else if(points<payment)
+    preview.textContent='Loaded points cannot be less than the received amount. Please check the values.';
+   else
+    preview.textContent='Received: '+money(payment)+' · Points loaded: '+fmt(points)+' · Extra bonus: '+fmt(Math.round((points-payment)*100)/100)+' points';
+  }
   return;
  }
  if(e.target.id!=='wallet-search')return;
@@ -245,8 +250,8 @@ document.addEventListener('change',e=>{if(e.target.closest('form#load'))e.target
 document.addEventListener('submit',async e=>{const f=e.target,form=f.id;if(!['auth','workspace','player','game','provider','load','reload','expense','closing','cashout','approve-cashout','cashout-rules','correct-cashout','team-create','team-reset','team-status','cutoff','reconcile','load-correction','review-load-correction','review-closing','review-payment'].includes(form))return;e.preventDefault();if(busy)return;const d=Object.fromEntries(new FormData(f));const submitter=e.submitter;busy=true;f.querySelectorAll('button').forEach(b=>b.disabled=true);
 try{if(['team-create','team-reset','team-status'].includes(form)){if(role!=='owner')throw Error('Owner only');const body={workspace_id:workspace.id,action:form==='team-create'?'create':form==='team-reset'?'reset_password':'set_active',...d};if(form==='team-status')body.active=d.active==='true';const result=await sb.functions.invoke('manage-team',{body});if(result.error)throw result.error;if(result.data?.error)throw Error(result.data.error);await refresh();message('Team account updated.');return}if(form==='auth'){if(Date.now()<authCooldown)throw Error('Please wait before retrying.');const loginId=String(d.email||'').trim();const isOwnerEmail=/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginId);const expectedEmail=isOwnerEmail?loginId.toLowerCase():await teamEmail(loginId);const res=submitter?.value==='signup'?await sb.auth.signUp({email:loginId,password:d.password,emailRedirectTo:'https://sweep-calculator-02.vercel.app/cloud.html'}):await sb.auth.signInWithPassword({email:expectedEmail,password:d.password});if(!res.error&&res.data?.user&&res.data.user.email?.toLowerCase()!==expectedEmail){await sb.auth.signOut();throw Error('Login identity mismatch. Please contact the Owner.')};if(res.error)throw res.error;if(!res.data.session){message('Check your inbox to confirm your email, then sign in.');return}await boot();return}
 if(form==='workspace'){const r=await sb.rpc('create_my_workspace',{workspace_name:d.name});if(r.error)throw r.error;await boot();return}
-if(form==='load'){if(String(d.bonus??'').trim()==='')throw Error('Enter a bonus percent for this load (0 is allowed).');const r=await sb.rpc('record_load',{p_player:d.player_id,p_game:d.game_id,p_provider:d.provider_id,p_payment:Number(d.payment),p_note:d.note||'',p_bonus:Number(d.bonus)});if(r.error)throw r.error;await refresh();message('Load saved with manually entered transaction bonus.');return}
-if(form==='load-correction'){if(String(d.bonus??'').trim()==='')throw Error('Enter the corrected bonus percent.');const r=await sb.rpc('submit_load_correction',{p_load:d.load_id,p_player:d.player_id,p_game:d.game_id,p_provider:d.provider_id,p_payment:Number(d.payment),p_note:d.note||'',p_reason:d.reason,p_bonus:Number(d.bonus)});if(r.error)throw r.error;await refresh();message(r.data==='applied'?'Correction applied and audited.':'Correction sent for Manager approval.');return}
+if(form==='load'){const payment=Number(d.payment),points=Number(d.points);if(!Number.isFinite(payment)||!Number.isFinite(points)||payment<=0||points<payment)throw Error('Enter valid received amount and points loaded (points must be at least received amount).');const r=await sb.rpc('record_load_points',{p_player:d.player_id,p_game:d.game_id,p_provider:d.provider_id,p_payment:payment,p_points:points,p_note:d.note||''});if(r.error)throw r.error;await refresh();message('Load recorded. Extra bonus: '+fmt(Math.round((points-payment)*100)/100)+' points.');return}
+if(form==='load-correction'){const payment=Number(d.payment),points=Number(d.points);if(!Number.isFinite(payment)||!Number.isFinite(points)||payment<=0||points<payment)throw Error('Corrected loaded points must be at least payment received.');const r=await sb.rpc('submit_load_points_correction',{p_load:d.load_id,p_player:d.player_id,p_game:d.game_id,p_provider:d.provider_id,p_payment:payment,p_points:points,p_note:d.note||'',p_reason:d.reason});if(r.error)throw r.error;await refresh();message(r.data==='applied'?'Correction applied and audited.':'Correction sent for Manager approval.');return}
 if(form==='review-load-correction'){if(!manager())throw Error('Manager only');const r=await sb.rpc('review_load_correction',{p_request:d.request_id,p_approve:submitter?.value==='approve',p_review_note:d.note});if(r.error)throw r.error;await refresh();message('Correction request reviewed.');return}
 if(form==='review-payment'){if(role!=='owner')throw Error('Owner only');const r=await sb.rpc('review_payment_reconciliation',{p_reconciliation:d.reconciliation_id,p_reason:d.reason});if(r.error)throw r.error;await refresh();message('Settlement difference approved.');return}
 if(form==='review-closing'){if(role!=='owner')throw Error('Owner only');const r=await sb.rpc('review_backend_closing',{p_closing:d.closing_id,p_corrected_balance:d.decision==='correct'?Number(d.balance):null,p_reason:d.note});if(r.error)throw r.error;await refresh();message('Closing review saved and audited.');return}
