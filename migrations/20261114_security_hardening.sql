@@ -41,4 +41,14 @@ grant select on public.cashouts_visible to authenticated;
 drop policy if exists "Managers view payment reconciliations" on public.payment_reconciliations;
 create policy "Managers view payment reconciliations" on public.payment_reconciliations for select to authenticated
  using(public.team_access_active(workspace_id) and public.is_workspace_manager(workspace_id));
+drop policy if exists workspace_read on public.workspaces;
+create policy workspace_read on public.workspaces for select to authenticated using(public.team_access_active(id));
+drop policy if exists workspace_update on public.workspaces;
+create policy workspace_update on public.workspaces for update to authenticated using(
+ public.team_access_active(id) and exists(
+  select 1 from public.memberships m where m.workspace_id=id and m.user_id=auth.uid() and m.role='owner')
+) with check(
+ public.team_access_active(id) and exists(
+  select 1 from public.memberships m where m.workspace_id=id and m.user_id=auth.uid() and m.role='owner')
+);
 commit;
