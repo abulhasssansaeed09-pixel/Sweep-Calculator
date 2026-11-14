@@ -38,4 +38,7 @@ where auth.uid() is not null and public.team_access_active(c.workspace_id) and e
 );
 revoke insert,update,delete on public.cashouts_visible from public,anon,authenticated;
 grant select on public.cashouts_visible to authenticated;
+drop policy if exists "Managers view payment reconciliations" on public.payment_reconciliations;
+create policy "Managers view payment reconciliations" on public.payment_reconciliations for select to authenticated
+ using(public.team_access_active(workspace_id) and public.is_workspace_manager(workspace_id));
 commit;
