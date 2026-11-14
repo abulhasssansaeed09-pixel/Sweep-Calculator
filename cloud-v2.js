@@ -17,9 +17,25 @@ const teamEmail=async login=>{const hash=await crypto.subtle.digest('SHA-256',ne
 function authPage(){root.innerHTML=panel('Sign in or create owner account','<p class="muted">Owner: email and password. Team: username or email-style ID and password. Use test data during beta.</p><form id="auth" class="stack">'+fld('email','Email or username','text')+fld('password','Password','password','minlength="8"')+'<div class="actions"><button name="action" value="signin" class="primary">Sign in</button><button name="action" value="signup" class="ghost">Sign up</button></div><p id="message" class="muted"></p></form>')}
 function setupPage(){root.innerHTML=panel('Create your private workspace','<p class="muted">Business owners only. Manager and Loader accounts are created manually by the Owner.</p><form id="workspace" class="stack">'+fld('name','Business name')+'<button class="primary">Create workspace</button></form><button data-action="signout" class="ghost">Sign out</button><p id="message"></p>')}
 async function boot(){const {data:{user:u},error}=await sb.auth.getUser();if(error||!u){user=null;authPage();return}user=u;const r=await sb.from('memberships').select('workspace_id,user_id,role,workspaces(id,name,closing_time,closing_timezone)').eq('user_id',u.id).limit(1).maybeSingle();if(r.error){root.textContent=r.error.message;return}if(!r.data){setupPage();return}if(r.data.user_id!==u.id){await sb.auth.signOut();user=null;workspace=null;role=null;authPage();message('Account role mismatch. Please contact the Owner.');return}role=r.data.role;workspace=r.data.workspaces;await refresh();subscribe()}
+
+async function fetchWorkspaceRows(name,order){
+ const table=name==='cashouts'?'cashouts_visible':name;
+ const full=['players','loads','cashouts'].includes(name);
+ if(!full)return sb.from(table).select('*').eq('workspace_id',workspace.id).order(order,{ascending:false}).limit(1000);
+ let records=[],start=0;
+ while(true){
+  const r=await sb.from(table).select('*').eq('workspace_id',workspace.id).order(order,{ascending:false}).range(start,start+999);
+  if(r.error)return r;
+  const part=r.data||[];records.push(...part);
+  if(part.length<1000)break;
+  start+=1000;
+ }
+ return {data:records,error:null};
+}
+
 async function refresh(){if(!workspace)return;const specs=[['closing_audit','created_at'],['load_correction_requests','created_at'],['load_correction_audit','created_at'],['payment_reconciliations','created_at'],['team_accounts','created_at'],['platform_cashout_rules','workspace_id'],['cashout_notifications','created_at'],['cashouts','created_at'],['players','created_at'],['games','created_at'],['providers','created_at'],['loads','created_at'],['reloads','created_at'],['closings','created_at'],['expenses','created_at'],['memberships','created_at']];
 const selected=specs.filter(([name])=>(name!=='platform_cashout_rules'||role==='owner')&&(name!=='team_accounts'||role==='owner')&&(manager()||!['reloads','closings','expenses','memberships','cashout_notifications','platform_cashout_rules','payment_reconciliations','load_correction_audit','closing_audit'].includes(name)));
-const responses=await Promise.all(selected.map(([name,order])=>sb.from(name==='cashouts'?'cashouts_visible':name).select('*').eq('workspace_id',workspace.id).order(order,{ascending:false}).limit(1000)));
+const responses=await Promise.all(selected.map(([name,order])=>fetchWorkspaceRows(name,order)));
 const failure=responses.find(x=>x.error);if(failure){root.innerHTML=panel('Database error',esc(failure.error.message));return}
 const map=Object.fromEntries(selected.map(([name],i)=>[name,responses[i].data||[]]));
 closingAudit=map.closing_audit||[];loadCorrections=map.load_correction_requests||[];loadAudit=map.load_correction_audit||[];reconciliations=map.payment_reconciliations||[];teamAccounts=map.team_accounts||[];players=map.players||[];games=map.games||[];providers=map.providers||[];loads=map.loads||[];reloads=map.reloads||[];closings=map.closings||[];expenses=map.expenses||[];members=map.memberships||[];cashouts=map.cashouts||[];cashoutNotifications=map.cashout_notifications||[];cashoutRules=map.platform_cashout_rules||[];
@@ -179,5 +195,44 @@ if(form==='reload')Object.assign(row,{game_id:d.game_id,points:Number(d.points),
 
 const result=await sb.from(tableName).insert(row);if(result.error)throw result.error;await refresh();message('Saved successfully in cloud.');
 }catch(err){const msg=err.message||String(err);if(form==='auth'&&/after \d+ seconds|rate limit|too many requests/i.test(msg)){const seconds=Number(msg.match(/after (\d+) seconds/)?.[1]||60);authCooldown=Date.now()+seconds*1000}message(msg)}finally{busy=false;if(f.isConnected)f.querySelectorAll('button').forEach(b=>b.disabled=false)}});
+
+async function exportFullCsv(){
+ if(!manager())throw Error('Manager or Owner required');
+ const allowed=['loads','cashouts','players','closings','reloads','payment_reconciliations','expenses','load_correction_audit'];
+ const dataset=document.getElementById('export-dataset')?.value;
+ if(!allowed.includes(dataset))throw Error('Invalid export dataset');
+ const table=dataset==='cashouts'?'cashouts_visible':dataset;
+ const result=[];let start=0;
+ while(true){
+  const page=await sb.from(table).select('*').eq('workspace_id',workspace.id).order('created_at',{ascending:true}).range(start,start+499);
+  if(page.error)throw page.error;
+  const rows=page.data||[];result.push(...rows);
+  message('Preparing '+dataset+' CSV: '+result.length+' rows');
+  if(rows.length<500)break;
+  start+=500;
+ }
+ const columns=Array.from(new Set(result.flatMap(row=>Object.keys(row))));
+ const safeCell=value=>{
+  let s=value===null||value===undefined?'':typeof value==='object'?JSON.stringify(value):String(value);
+  if(/^[=+\-@\t\r]/.test(s))s="'"+s;
+  return '"'+s.replace(/"/g,'""')+'"';
+ };
+ const csv=[columns.map(safeCell).join(','),...result.map(row=>columns.map(k=>safeCell(row[k])).join(','))].join('\r\n');
+ const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+ const url=URL.createObjectURL(blob);
+ const link=document.createElement('a');
+ link.href=url;link.download='sweep-'+dataset+'-'+new Date().toISOString().slice(0,10)+'.csv';document.body.appendChild(link);link.click();link.remove();
+ setTimeout(()=>URL.revokeObjectURL(url),1000);
+ message('Export prepared: '+result.length+' rows from '+dataset+'.');
+}
+document.addEventListener('click',async e=>{
+ const control=e.target.closest('[data-action="export-csv"]');
+ if(!control)return;
+ if(busy)return;
+ busy=true;control.disabled=true;
+ try{await exportFullCsv()}catch(err){message(err.message||String(err))}
+ finally{busy=false;if(control.isConnected)control.disabled=false}
+});
+
 sb.auth.onAuthStateChange(event=>{if(event==='SIGNED_OUT')boot()});
 boot();
