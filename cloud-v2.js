@@ -8,7 +8,7 @@ const options=(a,label,fn)=>'<option value="">'+label+'</option>'+a.map(x=>'<opt
 const panel=(t,html)=>'<section class="card panel"><h2>'+t+'</h2>'+html+'</section>';
 const tbl=(head,rows)=>'<div class="tablewrap"><table><thead><tr>'+head.map(h=>'<th>'+h+'</th>').join('')+'</tr></thead><tbody>'+(rows.length?rows.map(row=>'<tr>'+row.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join(''):'<tr><td colspan="'+head.length+'" class="empty">No records yet</td></tr>')+'</tbody></table></div>';
 let user=null,workspace=null,role=null,tab='overview',channel=null,busy=false,authCooldown=0;
-let reconciliations=[],loadCorrections=[],loadAudit=[],closingAudit=[],cashoutAudit=[];let reportSummaries={day:[],week:[],month:[]},loaderPerformance=[],backendTicker=[];let teamAccounts=[];let players=[],games=[],providers=[],loads=[],reloads=[],closings=[],expenses=[],members=[],cashouts=[],cashoutNotifications=[],cashoutRules=[];
+let reconciliations=[],loadCorrections=[],loadAudit=[],closingAudit=[],cashoutAudit=[],walletBonusTotals=new Map();let reportSummaries={day:[],week:[],month:[]},loaderPerformance=[],backendTicker=[];let teamAccounts=[];let players=[],games=[],providers=[],loads=[],reloads=[],closings=[],expenses=[],members=[],cashouts=[],cashoutNotifications=[],cashoutRules=[];
 const manager=()=>['owner','manager'].includes(role);
 const playerName=id=>players.find(x=>x.id===id)?.name||'Unknown';
 const gameName=id=>games.find(x=>x.id===id)?.name||'Unknown';
@@ -40,6 +40,9 @@ const responses=await Promise.all(selected.map(([name,order])=>fetchWorkspaceRow
 const failure=responses.find(x=>x.error);if(failure){root.innerHTML=panel('Database error',esc(failure.error.message));return}
 const map=Object.fromEntries(selected.map(([name],i)=>[name,responses[i].data||[]]));
 cashoutAudit=map.cashout_audit||[];closingAudit=map.closing_audit||[];loadCorrections=map.load_correction_requests||[];loadAudit=map.load_correction_audit||[];reconciliations=map.payment_reconciliations||[];teamAccounts=map.team_accounts||[];players=map.players||[];games=map.games||[];providers=map.providers||[];loads=map.loads||[];reloads=map.reloads||[];closings=map.closings||[];expenses=map.expenses||[];members=map.memberships||[];cashouts=map.cashouts||[];cashoutNotifications=map.cashout_notifications||[];cashoutRules=map.platform_cashout_rules||[];
+const walletTotalsResponse=await sb.rpc('workspace_player_wallet_totals',{p_workspace:workspace.id});
+if(walletTotalsResponse.error){root.innerHTML=panel('Wallet summary error',esc(walletTotalsResponse.error.message));return}
+walletBonusTotals=new Map((walletTotalsResponse.data||[]).map(x=>[x.player_id,Number(x.extra_bonus_points||0)]));
 if(manager()){const calls=await Promise.all([sb.rpc('workspace_report_summary',{p_workspace:workspace.id,p_bucket:'day'}),sb.rpc('workspace_report_summary',{p_workspace:workspace.id,p_bucket:'week'}),sb.rpc('workspace_report_summary',{p_workspace:workspace.id,p_bucket:'month'}),sb.rpc('workspace_loader_performance',{p_workspace:workspace.id}),sb.rpc('backend_live_ticker',{p_workspace:workspace.id})]);const failure=calls.find(x=>x.error);if(failure){root.innerHTML=panel('Reporting error',esc(failure.error.message));return}reportSummaries={day:calls[0].data||[],week:calls[1].data||[],month:calls[2].data||[]};loaderPerformance=calls[3].data||[];backendTicker=calls[4].data||[]}
 render()}
 const navigation=[['overview','Overview'],['players','Player Wallet'],['load','New Load'],['cashout','Cash Outs'],['backend','Backend Closing'],['payments','Payment Closing'],['reloads','Backend Reloads'],['reports','Reports'],['expenses','Expenses'],['settings','Settings'],['team','Team']];
@@ -91,13 +94,22 @@ function walletSummaryRows(collection){
  return collection.map(p=>{
  const ls=loads.filter(l=>l.player_id===p.id),cs=cashouts.filter(x=>x.player_id===p.id);
  const newBadge=Date.now()-new Date(p.created_at).getTime()<48*3600000?' <span class="pill">New</span>':'';
- return [esc(p.name)+newBadge,'<code title="'+esc(p.id)+'">'+esc(p.id)+'</code>',
- money(sum(ls,l=>l.payment)),fmt(sum(ls,l=>l.points)),fmt(sum(cs,x=>x.points)),ls.length,cs.length]
+ return [
+   esc(p.name)+newBadge,
+   '<strong>'+fmt(walletBonusTotals.get(p.id)||0)+' pts</strong>',
+   money(sum(ls,l=>l.payment)),
+   fmt(sum(ls,l=>l.points)),
+   fmt(sum(cs,x=>x.points)),
+   ls.length,
+   cs.length,
+   '<code title="Full player ID: '+esc(p.id)+'">'+esc(p.id.slice(0,8))+'</code>'
+ ];
  })}
 function playersPage(){
- const summary=tbl(['Player','Unique ID','Payments','Loaded','Redeemed','Loads','Cash Outs'],walletSummaryRows(players));
+ const walletHeaders=['Player','Extra Bonus (Total)','Payments','Loaded','Redeemed','Loads','Cash Outs','Player ID'];
+ const summary=tbl(walletHeaders,walletSummaryRows(players));
  return '<div class="two">'+panel('Create Player','<form id="player" class="stack">'+fld('name','Player name / ID')+'<button class="primary">Save Player</button></form>')+
- panel('Player Wallets','<label class="field">Search player / unique ID<input id="wallet-search" type="search" placeholder="Search by name or full ID"></label><div id="wallet-results">'+summary+'</div>')+'</div>'+
+ panel('Player Wallets','<label class="field">Search player / unique ID<input id="wallet-search" type="search" placeholder="Search by name or full ID"></label><p class="muted">Extra Bonus (Total) = all bonus points added across this player’s Load transactions. The player ID is shortened for display; searching by full ID still works.</p><div id="wallet-results">'+summary+'</div>')+'</div>'+
  panel('Complete Wallet History','<div id="wallet-history">'+tbl(['Date','Player','Type','Backend','Method','Paid/Received','Points','Bonus','Status','Note','Worker'],walletHistoryRows())+'</div>');
 }
 
@@ -224,7 +236,7 @@ document.addEventListener('input',e=>{
  const q=e.target.value.trim().toLowerCase();
  const matched=players.filter(p=>p.name.toLowerCase().includes(q)||p.id.toLowerCase().startsWith(q));
  const target=document.getElementById('wallet-results');
- if(target)target.innerHTML=tbl(['Player','Unique ID','Payments','Loaded','Redeemed','Loads','Cash Outs'],walletSummaryRows(matched));
+ if(target)target.innerHTML=tbl(['Player','Extra Bonus (Total)','Payments','Loaded','Redeemed','Loads','Cash Outs','Player ID'],walletSummaryRows(matched));
  const history=document.getElementById('wallet-history');
  if(history)history.innerHTML=tbl(['Date','Player','Type','Backend','Method','Paid/Received','Points','Bonus','Status','Note','Worker'],walletHistoryRows(matched.map(p=>p.id)));
 });
