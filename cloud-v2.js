@@ -16,8 +16,14 @@ const workerName=id=>loaderPerformance.find(x=>x.worker_id===id)?.login_label||t
 function message(s){const el=document.getElementById('message');if(el)el.textContent=s;else alert(s)}
 // Shared confirmation is mounted outside the workspace root so live refreshes cannot remove it.
 const SAVE_CONFIRMATION_TIMEOUT_MS=15000;
-let saveDialog=null,saveDialogReturnFocus=null,saveDialogTimer=null;
-function cancelSaveDialogTimer(){if(saveDialogTimer!==null){clearTimeout(saveDialogTimer);saveDialogTimer=null}}
+let saveDialog=null,saveDialogReturnFocus=null,saveDialogTimer=null,saveDialogTicker=null,saveDialogDeadline=0;
+function cancelSaveDialogTimer(){if(saveDialogTimer!==null)clearTimeout(saveDialogTimer);if(saveDialogTicker!==null)clearInterval(saveDialogTicker);saveDialogTimer=null;saveDialogTicker=null;saveDialogDeadline=0}
+function updateSaveDialogCountdown(){
+ if(!saveDialog?.open||!saveDialogDeadline)return;
+ const seconds=Math.max(0,Math.ceil((saveDialogDeadline-Date.now())/1000));
+ saveDialog.querySelector('.save-auto-close').textContent=`Auto-closes in ${seconds}s`;
+ if(seconds===0){cancelSaveDialogTimer();saveDialog.close()}
+}
 function getSaveDialog(){
  if(saveDialog)return saveDialog;
  const styles=document.createElement('style');
@@ -29,17 +35,19 @@ function getSaveDialog(){
   #save-confirmation-dialog p{margin:0 0 22px;line-height:1.55;color:#cbd5e1;overflow-wrap:anywhere}
   #save-confirmation-dialog button{display:block;width:100%;border:0;border-radius:10px;padding:13px 18px;font-weight:700;font-size:1rem;background:#5d75ef;color:white;cursor:pointer}
   #save-confirmation-dialog button:focus-visible{outline:2px solid #9fb4ff;outline-offset:3px}
-  #save-confirmation-dialog .save-auto-close{display:block;margin-top:12px;font-size:.8rem;color:#94a3b8}
+  #save-confirmation-dialog .save-auto-close{display:block;margin-top:12px;font-size:.8rem;color:#94a3b8;font-variant-numeric:tabular-nums}
  `;
  document.head.appendChild(styles);
  saveDialog=document.createElement('dialog');
  saveDialog.id='save-confirmation-dialog';
  saveDialog.setAttribute('aria-labelledby','save-confirmation-title');
  saveDialog.setAttribute('aria-describedby','save-confirmation-detail');
- saveDialog.innerHTML='<div class="save-check" aria-hidden="true">✓</div><h2 id="save-confirmation-title"></h2><p id="save-confirmation-detail"></p><button type="button" autofocus>OK</button><small class="save-auto-close">Closes automatically after 15 seconds.</small>';
+ saveDialog.innerHTML='<div class="save-check" aria-hidden="true">✓</div><h2 id="save-confirmation-title"></h2><p id="save-confirmation-detail"></p><button type="button" autofocus>OK</button><small class="save-auto-close">Auto-closes in 15s</small>';
  saveDialog.querySelector('button').addEventListener('click',()=>{cancelSaveDialogTimer();saveDialog.close()});
  saveDialog.addEventListener('close',()=>{if(saveDialog.open)return;cancelSaveDialogTimer();const previous=saveDialogReturnFocus;saveDialogReturnFocus=null;if(previous?.isConnected&&previous!==document.body&&typeof previous.focus==='function')previous.focus();else root.querySelector('button[data-tab].active, form input, form select, form button')?.focus()});
  document.body.appendChild(saveDialog);
+ document.addEventListener('visibilitychange',updateSaveDialogCountdown);
+ window.addEventListener('focus',updateSaveDialogCountdown);
  return saveDialog;
 }
 function showSaveConfirmation(title,detail){
@@ -48,7 +56,10 @@ function showSaveConfirmation(title,detail){
  if(!dialog.open){saveDialogReturnFocus=document.activeElement;dialog.showModal()}
  dialog.querySelector('button').focus();
  cancelSaveDialogTimer();
- saveDialogTimer=setTimeout(()=>{saveDialogTimer=null;if(dialog.open)dialog.close()},SAVE_CONFIRMATION_TIMEOUT_MS);
+ saveDialogDeadline=Date.now()+SAVE_CONFIRMATION_TIMEOUT_MS;
+ updateSaveDialogCountdown();
+ saveDialogTicker=setInterval(updateSaveDialogCountdown,200);
+ saveDialogTimer=setTimeout(updateSaveDialogCountdown,SAVE_CONFIRMATION_TIMEOUT_MS);
 }
 async function completeSave(title,detail,update=refresh){
  let refreshFailed=false;
