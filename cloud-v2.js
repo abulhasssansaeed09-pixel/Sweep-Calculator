@@ -15,7 +15,9 @@ const gameName=id=>games.find(x=>x.id===id)?.name||'Unknown';
 const workerName=id=>loaderPerformance.find(x=>x.worker_id===id)?.login_label||teamAccounts.find(x=>x.user_id===id)?.login_id||(id||'').slice(0,8);
 function message(s){const el=document.getElementById('message');if(el)el.textContent=s;else alert(s)}
 // Shared confirmation is mounted outside the workspace root so live refreshes cannot remove it.
-let saveDialog=null,saveDialogReturnFocus=null;
+const SAVE_CONFIRMATION_TIMEOUT_MS=15000;
+let saveDialog=null,saveDialogReturnFocus=null,saveDialogTimer=null;
+function cancelSaveDialogTimer(){if(saveDialogTimer!==null){clearTimeout(saveDialogTimer);saveDialogTimer=null}}
 function getSaveDialog(){
  if(saveDialog)return saveDialog;
  const styles=document.createElement('style');
@@ -27,15 +29,16 @@ function getSaveDialog(){
   #save-confirmation-dialog p{margin:0 0 22px;line-height:1.55;color:#cbd5e1;overflow-wrap:anywhere}
   #save-confirmation-dialog button{display:block;width:100%;border:0;border-radius:10px;padding:13px 18px;font-weight:700;font-size:1rem;background:#5d75ef;color:white;cursor:pointer}
   #save-confirmation-dialog button:focus-visible{outline:2px solid #9fb4ff;outline-offset:3px}
+  #save-confirmation-dialog .save-auto-close{display:block;margin-top:12px;font-size:.8rem;color:#94a3b8}
  `;
  document.head.appendChild(styles);
  saveDialog=document.createElement('dialog');
  saveDialog.id='save-confirmation-dialog';
  saveDialog.setAttribute('aria-labelledby','save-confirmation-title');
  saveDialog.setAttribute('aria-describedby','save-confirmation-detail');
- saveDialog.innerHTML='<div class="save-check" aria-hidden="true">✓</div><h2 id="save-confirmation-title"></h2><p id="save-confirmation-detail"></p><button type="button" autofocus>OK</button>';
- saveDialog.querySelector('button').addEventListener('click',()=>saveDialog.close());
- saveDialog.addEventListener('close',()=>{const previous=saveDialogReturnFocus;saveDialogReturnFocus=null;if(previous?.isConnected&&previous!==document.body&&typeof previous.focus==='function')previous.focus();else root.querySelector('button[data-tab].active, form input, form select, form button')?.focus()});
+ saveDialog.innerHTML='<div class="save-check" aria-hidden="true">✓</div><h2 id="save-confirmation-title"></h2><p id="save-confirmation-detail"></p><button type="button" autofocus>OK</button><small class="save-auto-close">Closes automatically after 15 seconds.</small>';
+ saveDialog.querySelector('button').addEventListener('click',()=>{cancelSaveDialogTimer();saveDialog.close()});
+ saveDialog.addEventListener('close',()=>{if(saveDialog.open)return;cancelSaveDialogTimer();const previous=saveDialogReturnFocus;saveDialogReturnFocus=null;if(previous?.isConnected&&previous!==document.body&&typeof previous.focus==='function')previous.focus();else root.querySelector('button[data-tab].active, form input, form select, form button')?.focus()});
  document.body.appendChild(saveDialog);
  return saveDialog;
 }
@@ -44,6 +47,8 @@ function showSaveConfirmation(title,detail){
  const dialog=getSaveDialog();dialog.querySelector('#save-confirmation-title').textContent=String(title);dialog.querySelector('#save-confirmation-detail').textContent=text;
  if(!dialog.open){saveDialogReturnFocus=document.activeElement;dialog.showModal()}
  dialog.querySelector('button').focus();
+ cancelSaveDialogTimer();
+ saveDialogTimer=setTimeout(()=>{saveDialogTimer=null;if(dialog.open)dialog.close()},SAVE_CONFIRMATION_TIMEOUT_MS);
 }
 async function completeSave(title,detail,update=refresh){
  let refreshFailed=false;
